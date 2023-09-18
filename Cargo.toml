@@ -1,6 +1,6 @@
 [package]
 name = "in-keys"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Crate for utilizing streams in a minimal and convenient `Terminal` construct"
 repository = "https://github.com/Sapiet1/in-keys"

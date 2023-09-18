@@ -120,14 +120,14 @@ impl StdinLock {
     read_or_timeout! {
         "Reads a key with an optional timeout." |
         read_key_or_timeout as read_key -> Key,
-        "Reads a string with an optional timeout." |
+        "Reads a line of text with an optional timeout." |
         read_string_or_timeout as read_string -> String,
     }
 
     read_future! {
         "Reads a key asynchronously." |
         read_key_future as read_key -> Key,
-        "Reads a string asynchronously." |
+        "Reads a line of text asynchronously." |
         read_string_future as read_string -> String,
     }
 }
@@ -159,6 +159,60 @@ impl StdoutLock {
     pub fn clear(&mut self) -> IoResult<()> {
         const CLEAR_SCREEN: &str = "\r\x1b[2J\r\x1b[H";
         self.print(CLEAR_SCREEN)
+    }
+
+    /// Clears the screen from the cursor position to the end of the screen.
+    pub fn clear_to_end(&mut self) -> IoResult<()> {
+        const CLEAR_TO_END: &str = "\x1b[J";
+        self.print(CLEAR_TO_END)
+    }
+
+    /// Clears the screen from the beginning to the cursor position.
+    pub fn clear_to_beginning(&mut self) -> IoResult<()> {
+        const CLEAR_TO_BEGINNING: &str = "\x1b[1J";
+        self.print(CLEAR_TO_BEGINNING)
+    }
+
+    /// Clears the current line from the cursor position to the end of the line.
+    pub fn clear_line_to_end(&mut self) -> IoResult<()> {
+        const CLEAR_LINE_TO_END: &str = "\x1b[K";
+        self.print(CLEAR_LINE_TO_END)
+    }
+
+    /// Clears the current line from the beginning to the cursor position.
+    pub fn clear_line_to_beginning(&mut self) -> IoResult<()> {
+        const CLEAR_LINE_TO_BEGINNING: &str = "\x1b[1K";
+        self.print(CLEAR_LINE_TO_BEGINNING)
+    }
+
+    /// Moves the cursor to the specified row and column.
+    pub fn move_cursor(&mut self, row: usize, col: usize) -> IoResult<()> {
+        let move_cursor = format!("\x1b[{};{}H", row, col);
+        self.print(&move_cursor)
+    }
+
+    /// Moves the cursor up by a specified number of rows.
+    pub fn move_cursor_up(&mut self, rows: usize) -> IoResult<()> {
+        let move_up = format!("\x1b[{}A", rows);
+        self.print(&move_up)
+    }
+
+    /// Moves the cursor down by a specified number of rows.
+    pub fn move_cursor_down(&mut self, rows: usize) -> IoResult<()> {
+        let move_down = format!("\x1b[{}B", rows);
+        self.print(&move_down)
+    }
+
+    /// Moves the cursor forward (right) by a specified number of columns.
+    pub fn move_cursor_forward(&mut self, cols: usize) -> IoResult<()> {
+        let move_forward = format!("\x1b[{}C", cols);
+        self.print(&move_forward)
+    }
+
+    /// Moves the cursor backward (left) by a specified number of columns.
+    pub fn move_cursor_backward(&mut self, cols: usize) -> IoResult<()> {
+        let move_backward = format!("\x1b[{}D", cols);
+        self.print(&move_backward)
     }
 
     /// Hides the cursor in the terminal.

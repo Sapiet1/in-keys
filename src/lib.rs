@@ -2,7 +2,7 @@
 //!
 //! This crate provides functions for handling input from the terminal, with a focus on providing
 //! both synchronous and asynchronous options. It uses low-level system calls for efficient input
-//! polling and processing.
+//! polling and processing. Minimal support for output streams exist as well.
 //!
 //! ## Synchronous Input
 //!
@@ -115,6 +115,37 @@ impl Terminal {
             Target::Stdout => self.streams.lock_stdout().println(str),
         }
         .unwrap_or_else(|error| panic!("{}: {}", error, FAILED_WRITE))
+    }
+
+    /// Clears the screen by sending an escape sequence.
+    /// This function sends the escape sequence to clear the entire screen.
+    /// It moves the cursor to the top-left corner of the terminal.
+    /// Panics if an error occurs during writing.
+    pub fn clear(&self) {
+        self.streams
+            .lock_stdout()
+            .clear()
+            .unwrap_or_else(|error| panic!("{}: {}", error, FAILED_WRITE))
+    }
+
+    /// Hides the cursor in the terminal.
+    /// This function sends the escape sequence to hide the cursor in the terminal.
+    /// Panics if an error occurs during writing.
+    pub fn hide(&self) {
+        self.streams
+            .lock_stdout()
+            .hide()
+            .unwrap_or_else(|error| panic!("{}: {}", error, FAILED_WRITE))
+    }
+
+    /// Shows the cursor in the terminal.
+    /// This function sends the escape sequence to show the cursor in the terminal.
+    /// Panics if an error occurs during writing.
+    pub fn show(&self) {
+        self.streams
+            .lock_stdout()
+            .show()
+            .unwrap_or_else(|error| panic!("{}: {}", error, FAILED_WRITE))
     }
 
     /// Reads a single key from the standard input stream.
