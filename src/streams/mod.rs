@@ -18,7 +18,7 @@ use derived_deref::{Deref, DerefMut};
 mod unix;
 
 use crate::keys::Key;
-use unix::{read_key, read_string};
+use unix::{read_key, read_string, size};
 
 // This struct represents the standard streams: stderr, stdout, and stdin.
 #[derive(Debug)]
@@ -225,6 +225,11 @@ impl StdoutLock {
     pub fn show(&mut self) -> IoResult<()> {
         const SHOW_CURSOR: &str = "\x1b[?25h";
         self.print(SHOW_CURSOR)
+    }
+
+    /// Gives the dimensions of the terminal, (`row`, `column`).
+    pub fn size(&self) -> Option<(usize, usize)> {
+        size(self)
     }
 }
 

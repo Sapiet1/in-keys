@@ -24,14 +24,12 @@
 
 use std::{
     mem::MaybeUninit,
-    io::{StdinLock, BufRead},
+    io::{StdoutLock, StdinLock, BufRead},
+    os::fd::AsRawFd,
     io::{Error as IoError, ErrorKind, Result as IoResult},
 };
 
 use crate::keys::Key;
-
-// Constant representing the file descriptor for standard input.
-const STDIN: i32 = libc::STDIN_FILENO;
 
 // Constant representing a successful system call result.
 const SUCCESS: i32 = 0;
@@ -44,14 +42,25 @@ fn io_error(c_call: impl FnOnce() -> libc::c_int) -> IoResult<()> {
     }
 }
 
+// Attains the window size of the terminal, in (`row`, `column`) notation.
+pub fn size(lock: &StdoutLock) -> Option<(usize, usize)> {
+    // Safety: `ioctl` is appropriately used.
+    unsafe {
+        let mut size: libc::winsize = std::mem::zeroed();
+
+        #[allow(clippy::useless_conversion)]
+        libc::ioctl(lock.as_raw_fd(), libc::TIOCGWINSZ.into(), &mut size);
+        (size.ws_row > 0 && size.ws_col > 0).then_some((size.ws_row as usize, size.ws_col as usize))
+    }
+}
 // Polls the standard input stream for available input.
 // `timeout` is the time, in milliseconds, to wait for input. 0 is non-blocking and negative is forever blocking.
 // The returned `bool` indicating whether there is input available [`true`] or not [`false`].
-fn poll_input(timeout: i32) -> IoResult<bool> {
+fn poll_input(lock: &StdinLock, timeout: i32) -> IoResult<bool> {
     // Safety: Count for `fds` is properly managed.
     unsafe {
         let mut fds = libc::pollfd {
-            fd: STDIN,             // Standard input file descriptor
+            fd: lock.as_raw_fd(),  // Standard input file descriptor
             events: libc::POLLIN,  // Interested in read events
             revents: 0,            // Placeholder for returned events
         };
@@ -70,9 +79,9 @@ fn poll_input(timeout: i32) -> IoResult<bool> {
 // 0 is non-blocking and negative is forever blocking.
 // If input is available, an `IoResult` containing an `Option` of a byte array with size `N` is returned.
 // If no input is available within the specified timeout, `Ok(None)` is returned.
-fn read_bytes<const N: usize>(_lock: &mut StdinLock, timeout: i32) -> IoResult<Option<[u8; N]>> {
+fn read_bytes<const N: usize>(lock: &mut StdinLock, timeout: i32) -> IoResult<Option<[u8; N]>> {
     // Check if input is available, return None if not
-    if !poll_input(timeout)? { return Ok(None); }
+    if !poll_input(lock, timeout)? { return Ok(None); }
 
     // Special case for zero-sized array, return filled array of zeros
     if N == 0 { return Ok(Some([0; N])); }
@@ -82,7 +91,7 @@ fn read_bytes<const N: usize>(_lock: &mut StdinLock, timeout: i32) -> IoResult<O
 
     // Use unsafe Rust to call the `read` system call, populating the buffer
     // Safety: Valid `fd` and buffer.
-    let read = unsafe { libc::read(STDIN, buffer.as_mut_ptr().cast(), N) };
+    let read = unsafe { libc::read(lock.as_raw_fd(), buffer.as_mut_ptr().cast(), N) };
 
     // Match on the result of the read and the buffer contents
     match (read, buffer) {
@@ -97,7 +106,7 @@ fn process_key(lock: &mut StdinLock, timeout: i32) -> IoResult<Option<Key>> {
     // Try to read one byte from the input
     match read_bytes::<1>(lock, timeout)? {
         // If an escape character (0x1b) is received and there's more input available
-        Some([b'\x1b']) if poll_input(0)? => {
+        Some([b'\x1b']) if poll_input(lock, 0)? => {
             // Match on the next two bytes to determine special key combinations
             let key = match read_bytes::<2>(lock, 0)? {
                 Some([b'[', b'A']) => return Ok(Some(Key::ArrowUp)),
@@ -172,7 +181,7 @@ pub(super) fn read_key(lock: &mut StdinLock, timeout: i32) -> IoResult<Option<Ke
     unsafe {
         // Initialize termios struct
         let mut termios = MaybeUninit::uninit();
-        io_error(|| libc::tcgetattr(STDIN, termios.as_mut_ptr()))?;
+        io_error(|| libc::tcgetattr(lock.as_raw_fd(), termios.as_mut_ptr()))?;
 
         // Get the initialized termios struct
         let mut termios = termios.assume_init();
@@ -182,13 +191,13 @@ pub(super) fn read_key(lock: &mut StdinLock, timeout: i32) -> IoResult<Option<Ke
         termios.c_lflag &= !(libc::ICANON | libc::ECHO);
 
         // Apply the modified termios settings
-        io_error(|| libc::tcsetattr(STDIN, libc::TCSAFLUSH, &termios))?;
+        io_error(|| libc::tcsetattr(lock.as_raw_fd(), libc::TCSAFLUSH, &termios))?;
         // Read and process the key
         let result = process_key(lock, timeout);
 
         // Restore the original termios settings
         termios.c_lflag = original;
-        io_error(|| libc::tcsetattr(STDIN, libc::TCSAFLUSH, &termios))?;
+        io_error(|| libc::tcsetattr(lock.as_raw_fd(), libc::TCSAFLUSH, &termios))?;
 
         result
     }
@@ -201,7 +210,7 @@ pub(super) fn read_string(lock: &mut StdinLock, timeout: i32) -> IoResult<Option
     unsafe {
         // Initialize termios struct
         let mut termios = MaybeUninit::uninit();
-        io_error(|| libc::tcgetattr(STDIN, termios.as_mut_ptr()))?;
+        io_error(|| libc::tcgetattr(lock.as_raw_fd(), termios.as_mut_ptr()))?;
 
         // Get the initialized termios struct
         let mut termios = termios.assume_init();
@@ -211,10 +220,10 @@ pub(super) fn read_string(lock: &mut StdinLock, timeout: i32) -> IoResult<Option
         termios.c_lflag |= libc::ICANON;
 
         // Apply the modified termios settings
-        io_error(|| libc::tcsetattr(STDIN, libc::TCSAFLUSH, &termios))?;
+        io_error(|| libc::tcsetattr(lock.as_raw_fd(), libc::TCSAFLUSH, &termios))?;
 
         // If there is input available, read a line
-        let out = if poll_input(timeout)? {
+        let out = if poll_input(lock, timeout)? {
             let mut buffer = String::new();
             lock.read_line(&mut buffer)?;
 
@@ -225,7 +234,7 @@ pub(super) fn read_string(lock: &mut StdinLock, timeout: i32) -> IoResult<Option
 
         // Restore the original termios settings
         termios.c_lflag = original;
-        io_error(|| libc::tcsetattr(STDIN, libc::TCSAFLUSH, &termios))?;
+        io_error(|| libc::tcsetattr(lock.as_raw_fd(), libc::TCSAFLUSH, &termios))?;
 
         out
     }
