@@ -3,7 +3,8 @@ name = "in-keys"
 version = "0.1.0"
 edition = "2021"
 description = "Crate for utilizing streams in a minimal and convenient `Terminal` construct"
-repository = ""
+repository = "https://github.com/Sapiet1/in-keys"
+license = "MIT OR Apache-2.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
