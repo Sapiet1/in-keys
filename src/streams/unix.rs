@@ -56,6 +56,7 @@ pub fn size(lock: &StdoutLock) -> Option<(usize, usize)> {
 // Polls the standard input stream for available input.
 // `timeout` is the time, in milliseconds, to wait for input. 0 is non-blocking and negative is forever blocking.
 // The returned `bool` indicating whether there is input available [`true`] or not [`false`].
+
 fn poll_input(lock: &StdinLock, timeout: i32) -> IoResult<bool> {
     // Safety: Count for `fds` is properly managed.
     unsafe {
