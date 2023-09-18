@@ -192,13 +192,13 @@ pub(super) fn read_key(lock: &mut StdinLock, timeout: i32) -> IoResult<Option<Ke
         termios.c_lflag &= !(libc::ICANON | libc::ECHO);
 
         // Apply the modified termios settings
-        io_error(|| libc::tcsetattr(lock.as_raw_fd(), libc::TCSAFLUSH, &termios))?;
+        io_error(|| libc::tcsetattr(lock.as_raw_fd(), libc::TCSADRAIN, &termios))?;
         // Read and process the key
         let result = process_key(lock, timeout);
 
         // Restore the original termios settings
         termios.c_lflag = original;
-        io_error(|| libc::tcsetattr(lock.as_raw_fd(), libc::TCSAFLUSH, &termios))?;
+        io_error(|| libc::tcsetattr(lock.as_raw_fd(), libc::TCSADRAIN, &termios))?;
 
         result
     }
