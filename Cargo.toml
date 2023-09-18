@@ -1,0 +1,12 @@
+[package]
+name = "in-keys"
+version = "0.1.0"
+edition = "2021"
+description = "Crate for utilizing streams in a minimal and convenient `Terminal` construct"
+repository = ""
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+libc = "0.2"
+derived-deref = "2"
