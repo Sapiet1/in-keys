@@ -2,7 +2,7 @@
 
 This crate provides functions for handling input from the terminal, with a focus on providing
 both synchronous and asynchronous options. It uses low-level system calls for efficient input
-polling and processing.
+polling and processing. Minimal support for output streams exist as well. 
 
 ## Synchronous Input
 
@@ -18,7 +18,7 @@ remain responsive to other tasks or events while still monitoring for user input
 
 ## Example Usage
 
-```rust
+```rust,ignore
 use in_keys::Terminal;
 use std::time::Duration;
 use tokio::time;
