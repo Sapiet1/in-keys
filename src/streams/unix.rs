@@ -29,7 +29,10 @@ use std::{
     io::{Error as IoError, ErrorKind, Result as IoResult},
 };
 
-use crate::keys::Key;
+use crate::{
+    keys::Key,
+    streams::config::Flag,
+};
 
 // Constant representing a successful system call result.
 const SUCCESS: i32 = 0;
@@ -175,10 +178,13 @@ fn process_key(lock: &mut StdinLock, timeout: i32) -> IoResult<Option<Key>> {
     }
 }
 
-// This function reads a single key from the terminal input, disabling canonical mode and echoing.
-// It then processes the key and restores the original terminal settings.
-pub(super) fn read_key(lock: &mut StdinLock, timeout: i32) -> IoResult<Option<Key>> {
-    // Safety: `termios` is properly handled.
+pub(super) struct Original {
+    original: libc::c_uint,
+    flush: bool,
+}
+
+pub(super) fn set_config<const N: usize>(lock: &mut StdinLock, flush: bool, flags: [Flag; N]) -> IoResult<Original> {
+    // Safety: `termios` is properly handled
     unsafe {
         // Initialize termios struct
         let mut termios = MaybeUninit::uninit();
@@ -188,55 +194,53 @@ pub(super) fn read_key(lock: &mut StdinLock, timeout: i32) -> IoResult<Option<Ke
         let mut termios = termios.assume_init();
         // Store the original settings for later restoration
         let original = termios.c_lflag;
-        // Disable canonical mode and echo
-        termios.c_lflag &= !(libc::ICANON | libc::ECHO);
 
+        // Set flags
+        for flag in flags {
+            match flag {
+                Flag::Canonical => termios.c_lflag |= libc::ICANON,
+                Flag::Echo => termios.c_lflag |= libc::ECHO,
+                Flag::NotCanonical => termios.c_lflag &= !libc::ICANON,
+                Flag::NotEcho => termios.c_lflag &= !libc::ECHO,
+            }
+        }
+
+        let action = if flush { libc::TCSAFLUSH } else { libc::TCSADRAIN };
         // Apply the modified termios settings
-        io_error(|| libc::tcsetattr(lock.as_raw_fd(), libc::TCSADRAIN, &termios))?;
-        // Read and process the key
-        let result = process_key(lock, timeout);
-
-        // Restore the original termios settings
-        termios.c_lflag = original;
-        io_error(|| libc::tcsetattr(lock.as_raw_fd(), libc::TCSADRAIN, &termios))?;
-
-        result
+        io_error(|| libc::tcsetattr(lock.as_raw_fd(), action, &termios))?;
+        Ok(Original { original, flush })
     }
 }
 
-// This function reads a string of characters from the terminal input, enabling canonical mode.
-// It then restores the original terminal settings.
-pub(super) fn read_string(lock: &mut StdinLock, timeout: i32) -> IoResult<Option<String>> {
-    // Safety: `termios` is properly handled.
+pub(super) fn reset_config(lock: &mut StdinLock, Original { original, flush }: Original) -> IoResult<()> {
+    // Safety: `termios` is properly handled
     unsafe {
-        // Initialize termios struct
         let mut termios = MaybeUninit::uninit();
         io_error(|| libc::tcgetattr(lock.as_raw_fd(), termios.as_mut_ptr()))?;
 
-        // Get the initialized termios struct
         let mut termios = termios.assume_init();
-        // Store the original settings for later restoration
-        let original = termios.c_lflag;
-        // Enable canonical mode
-        termios.c_lflag |= libc::ICANON;
-
-        // Apply the modified termios settings
-        io_error(|| libc::tcsetattr(lock.as_raw_fd(), libc::TCSAFLUSH, &termios))?;
-
-        // If there is input available, read a line
-        let out = if poll_input(lock, timeout)? {
-            let mut buffer = String::new();
-            lock.read_line(&mut buffer)?;
-
-            Ok(Some(buffer))
-        } else {
-            Ok(None)
-        };
-
-        // Restore the original termios settings
         termios.c_lflag = original;
-        io_error(|| libc::tcsetattr(lock.as_raw_fd(), libc::TCSAFLUSH, &termios))?;
 
-        out
+        let action = if flush { libc::TCSAFLUSH } else { libc::TCSADRAIN };
+        // Restore the original termios settings
+        io_error(|| libc::tcsetattr(lock.as_raw_fd(), action, &termios))?;
+        Ok(())
+    }
+}
+
+// This function reads a single key from the terminal input.
+pub(super) fn read_key(lock: &mut StdinLock, timeout: i32) -> IoResult<Option<Key>> {
+    process_key(lock, timeout)
+}
+
+// This function reads a string of characters from the terminal input.
+pub(super) fn read_string(lock: &mut StdinLock, timeout: i32) -> IoResult<Option<String>> {
+    if poll_input(lock, timeout)? {
+        let mut buffer = String::new();
+        lock.read_line(&mut buffer)?;
+
+        Ok(Some(buffer))
+    } else {
+        Ok(None)
     }
 }
