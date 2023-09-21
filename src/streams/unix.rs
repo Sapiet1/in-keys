@@ -183,7 +183,7 @@ pub(super) fn read_key(lock: &mut StdinLock, timeout: i32) -> IoResult<Option<Ke
     process_key(lock, timeout)
 }
 
-// This function reads a string of characters from the terminal input.
+// This function reads a line of characters from the terminal input.
 pub(super) fn read_string(lock: &mut StdinLock, timeout: i32) -> IoResult<Option<String>> {
     if poll_input(lock, timeout)? {
         let mut buffer = String::new();
