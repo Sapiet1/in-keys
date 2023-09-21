@@ -202,7 +202,7 @@ pub(crate) struct Config<'a> {
 }
 
 impl<'a> Config<'a> {
-    pub(super) fn set<const N: usize>(lock: &'a mut StdinLock<'static>, flush: bool, flags: [Flag; N]) -> Self {
+    pub(super) fn set(lock: &'a mut StdinLock<'static>, flush: bool, flags: &[Flag]) -> Self {
         // Safety: `termios` is properly handled
         unsafe {
             // Initialize termios struct

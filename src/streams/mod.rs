@@ -116,7 +116,7 @@ macro_rules! read_or_timeout {
 impl StdinLock {
     /// Reads a single key from the standard input stream.
     pub fn read_key(&mut self) -> IoResult<Key> {
-        let config = Config::set(self, false, [Flag::NotCanonical, Flag::NotEcho]);
+        let config = Config::set(self, false, &[Flag::NotCanonical, Flag::NotEcho]);
         let value = read_key(config.lock, -1).map(Option::unwrap)?;
 
         Ok(value)
@@ -124,7 +124,7 @@ impl StdinLock {
 
     /// Reads a line of text from the standard input stream.
     pub fn read_string(&mut self) -> IoResult<String> {
-        let config = Config::set(self, false, [Flag::Canonical, Flag::NotEcho]);
+        let config = Config::set(self, false, &[Flag::Canonical, Flag::NotEcho]);
         let value = read_string(config.lock, -1).map(Option::unwrap)?;
 
         Ok(value)
@@ -132,7 +132,7 @@ impl StdinLock {
 
     /// Reads a line of text from the standard input stream, but with the text hidden.
     pub fn read_string_hidden(&mut self) -> IoResult<String> {
-        let config = Config::set(self, true, [Flag::Canonical, Flag::NotEcho]);
+        let config = Config::set(self, true, &[Flag::Canonical, Flag::NotEcho]);
         let value = read_string(config.lock, -1).map(Option::unwrap)?;
 
         Ok(value)
@@ -140,20 +140,20 @@ impl StdinLock {
 
     read_or_timeout! {
         "Reads a key with an optional timeout." |
-        read_key_or_timeout as read_key with false, [Flag::NotCanonical, Flag::NotEcho] => Key,
+        read_key_or_timeout as read_key with false, &[Flag::NotCanonical, Flag::NotEcho] => Key,
         "Reads a line of text with an optional timeout." |
-        read_string_or_timeout as read_string with false, [Flag::Canonical, Flag::Echo] => String,
+        read_string_or_timeout as read_string with false, &[Flag::Canonical, Flag::Echo] => String,
         "Reads a line of text with an optional timeout, the text hidden." |
-        read_string_hidden_or_timeout as read_string with true, [Flag::Canonical, Flag::NotEcho] => String,
+        read_string_hidden_or_timeout as read_string with true, &[Flag::Canonical, Flag::NotEcho] => String,
     }
 
     read_future! {
         "Reads a key asynchronously." |
-        read_key_future as read_key with false, [Flag::NotCanonical, Flag::NotEcho] => Key,
+        read_key_future as read_key with false, &[Flag::NotCanonical, Flag::NotEcho] => Key,
         "Reads a line of text asynchronously." |
-        read_string_future as read_string with false, [Flag::Canonical, Flag::Echo] => String,
+        read_string_future as read_string with false, &[Flag::Canonical, Flag::Echo] => String,
         "Reads a line of text asynchronously, the text hidden." |
-        read_string_hidden_future as read_string with true, [Flag::Canonical, Flag::NotEcho] => String,
+        read_string_hidden_future as read_string with true, &[Flag::Canonical, Flag::NotEcho] => String,
     }
 }
 
