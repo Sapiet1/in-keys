@@ -29,7 +29,10 @@ use std::{
     io::{Error as IoError, ErrorKind, Result as IoResult},
 };
 
-use crate::keys::Key;
+use crate::{
+    keys::Key,
+    streams::config::Flag,
+};
 
 // Constant representing a successful system call result.
 const SUCCESS: i32 = 0;
@@ -175,68 +178,70 @@ fn process_key(lock: &mut StdinLock, timeout: i32) -> IoResult<Option<Key>> {
     }
 }
 
-// This function reads a single key from the terminal input, disabling canonical mode and echoing.
-// It then processes the key and restores the original terminal settings.
+// This function reads a single key from the terminal input.
 pub(super) fn read_key(lock: &mut StdinLock, timeout: i32) -> IoResult<Option<Key>> {
-    // Safety: `termios` is properly handled.
-    unsafe {
-        // Initialize termios struct
-        let mut termios = MaybeUninit::uninit();
-        io_error(|| libc::tcgetattr(lock.as_raw_fd(), termios.as_mut_ptr()))?;
+    process_key(lock, timeout)
+}
 
-        // Get the initialized termios struct
-        let mut termios = termios.assume_init();
-        // Store the original settings for later restoration
-        let original = termios.c_lflag;
-        // Disable canonical mode and echo
-        termios.c_lflag &= !(libc::ICANON | libc::ECHO);
+// This function reads a line of characters from the terminal input.
+pub(super) fn read_string(lock: &mut StdinLock, timeout: i32) -> IoResult<Option<String>> {
+    if poll_input(lock, timeout)? {
+        let mut buffer = String::new();
+        lock.read_line(&mut buffer)?;
 
-        // Apply the modified termios settings
-        io_error(|| libc::tcsetattr(lock.as_raw_fd(), libc::TCSAFLUSH, &termios))?;
-        // Read and process the key
-        let result = process_key(lock, timeout);
-
-        // Restore the original termios settings
-        termios.c_lflag = original;
-        io_error(|| libc::tcsetattr(lock.as_raw_fd(), libc::TCSAFLUSH, &termios))?;
-
-        result
+        Ok(Some(buffer))
+    } else {
+        Ok(None)
     }
 }
 
-// This function reads a string of characters from the terminal input, enabling canonical mode.
-// It then restores the original terminal settings.
-pub(super) fn read_string(lock: &mut StdinLock, timeout: i32) -> IoResult<Option<String>> {
-    // Safety: `termios` is properly handled.
-    unsafe {
-        // Initialize termios struct
-        let mut termios = MaybeUninit::uninit();
-        io_error(|| libc::tcgetattr(lock.as_raw_fd(), termios.as_mut_ptr()))?;
+pub(crate) struct Config<'a> {
+    pub(super) lock: &'a mut StdinLock<'static>,
+    original: libc::termios,
+    flush: bool,
+}
 
-        // Get the initialized termios struct
-        let mut termios = termios.assume_init();
-        // Store the original settings for later restoration
-        let original = termios.c_lflag;
-        // Enable canonical mode
-        termios.c_lflag |= libc::ICANON;
+impl<'a> Config<'a> {
+    pub(super) fn set(lock: &'a mut StdinLock<'static>, flush: bool, flags: &[Flag]) -> Self {
+        // Safety: `termios` is properly handled
+        unsafe {
+            // Initialize termios struct
+            let mut termios = MaybeUninit::uninit();
+            // Theoretically, the call will never fail.
+            io_error(|| libc::tcgetattr(lock.as_raw_fd(), termios.as_mut_ptr())).unwrap();
 
-        // Apply the modified termios settings
-        io_error(|| libc::tcsetattr(lock.as_raw_fd(), libc::TCSAFLUSH, &termios))?;
+            // Get the initialized termios struct
+            let mut termios = termios.assume_init();
+            // Store the original settings for later restoration
+            let original = termios;
 
-        // If there is input available, read a line
-        let out = if poll_input(lock, timeout)? {
-            let mut buffer = String::new();
-            lock.read_line(&mut buffer)?;
+            // Set flags
+            for flag in flags {
+                match flag {
+                    Flag::Canonical => termios.c_lflag |= libc::ICANON,
+                    Flag::Echo => termios.c_lflag |= libc::ECHO,
+                    Flag::NotCanonical => termios.c_lflag &= !libc::ICANON,
+                    Flag::NotEcho => termios.c_lflag &= !libc::ECHO,
+                }
+            }
 
-            Ok(Some(buffer))
-        } else {
-            Ok(None)
-        };
+            // Apply the modified termios settings
+            let action = if flush { libc::TCSAFLUSH } else { libc::TCSADRAIN };
+            // This particular call will also, theoretically, never fail.
+            io_error(|| libc::tcsetattr(lock.as_raw_fd(), action, &termios)).unwrap();
+            Config { lock, original, flush }
+        }
+    }
+}
 
-        // Restore the original termios settings
-        termios.c_lflag = original;
-        io_error(|| libc::tcsetattr(lock.as_raw_fd(), libc::TCSAFLUSH, &termios))?;
-
-        out
+impl<'a> Drop for Config<'a> {
+    fn drop(&mut self) {
+        // Safety: `termios` is properly handled
+        unsafe {
+            // Restore the original termios settings
+            let action = if self.flush { libc::TCSAFLUSH } else { libc::TCSANOW };
+            // Call will theoretically never fail.
+            io_error(|| libc::tcsetattr(self.lock.as_raw_fd(), action, &self.original)).unwrap();
+        }
     }
 }

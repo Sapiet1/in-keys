@@ -16,9 +16,11 @@ use std::{
 use derived_deref::{Deref, DerefMut};
 
 mod unix;
+mod config;
 
 use crate::keys::Key;
 use unix::{read_key, read_string, size};
+use crate::streams::config::{Flag, Config};
 
 // This struct represents the standard streams: stderr, stdout, and stdin.
 #[derive(Debug)]
@@ -38,14 +40,14 @@ pub struct StdinLock(io::StdinLock<'static>);
 // This macro generates asynchronous read functions with associated documentation.
 macro_rules! read_future {
     // For each provided set of identifiers, types, and associated documentation...
-    ( $( $docs:literal | $read_future:ident as $future_read:ident -> $ret:ty ),* $( , )? ) => { $(
+    ( $( $docs:literal | $read_future:ident as $future_read:ident with $flush:expr, $flags:expr => $ret:ty ),* $( , )? ) => { $(
         // Generate a function with the specified identifier and return type,
         // along with its associated documentation.
         #[doc = $docs]
         pub fn $read_future(&mut self) -> impl Future<Output = IoResult<$ret>> + '_ {
             // Define a struct for the asynchronous read operation.
             struct ReadFuture<'a> {
-                lock: &'a mut StdinLock,
+                config: Config<'a>,
             }
 
             // Implement the Future trait for the asynchronous read operation.
@@ -54,11 +56,11 @@ macro_rules! read_future {
 
                 // Define how the future is polled.
                 fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-                    // Call the provided asynchronous read function and handle the result.
-                    match $future_read(self.lock, 0)? {
+                    match $future_read(self.config.lock, 0)? {
+                        // If ready, return the result
                         Some(out) => Poll::Ready(Ok(out)),
+                        // If no data is available, wake the task for later polling.
                         None => {
-                            // If no data is available, wake the task for later polling.
                             cx.waker().wake_by_ref();
                             Poll::Pending
                         },
@@ -66,8 +68,10 @@ macro_rules! read_future {
                 }
             }
 
+            // Sets the flags
+            let config = Config::set(self, $flush, $flags);
             // Return an instance of the asynchronous read future.
-            ReadFuture { lock: self }
+            ReadFuture { config }
         }
     )* };
 }
@@ -75,7 +79,7 @@ macro_rules! read_future {
 // This macro generates read functions with timeout support and associated documentation.
 macro_rules! read_or_timeout {
     // For each provided set of identifiers, types, and associated documentation...
-    ( $( $docs:literal | $read_or_timeout:ident as $timeout_read:ident -> $ret:ty ),* $( , )? ) => { $(
+    ( $( $docs:literal | $read_or_timeout:ident as $timeout_read:ident with $flush:expr, $flags:expr => $ret:ty ),* $( , )? ) => { $(
         // Generate a function with the specified identifier and return type,
         // along with its associated documentation.
         #[doc = $docs]
@@ -86,12 +90,15 @@ macro_rules! read_or_timeout {
         {
             // Convert the timeout duration to milliseconds.
             let mut timeout = timeout.as_millis();
+            // Set the flags for the input stream
+            let config = Config::set(self, $flush, $flags);
+
             loop {
                 // If the remaining timeout is greater than the maximum i32 value...
                 if timeout > i32::MAX as u128 {
                     // Call the provided read function with the maximum timeout value.
-                    match $timeout_read(self, i32::MAX)? {
-                        // If data is available, return it as a [`Some`] variant.
+                    match $timeout_read(config.lock, i32::MAX)? {
+                        // If data is available, give it as a [`Some`] variant.
                         Some(read) => return Ok(Some(read)),
                         // Otherwise, decrement the remaining timeout by the maximum value.
                         None => timeout -= i32::MAX as u128,
@@ -99,7 +106,7 @@ macro_rules! read_or_timeout {
                 } else {
                     // If the remaining timeout is within the i32 range...
                     // Call the provided read function with the converted timeout value.
-                    return $timeout_read(self, timeout as i32);
+                    return $timeout_read(config.lock, timeout as i32);
                 }
             }
         }
@@ -109,26 +116,56 @@ macro_rules! read_or_timeout {
 impl StdinLock {
     /// Reads a single key from the standard input stream.
     pub fn read_key(&mut self) -> IoResult<Key> {
-        read_key(self, -1).map(Option::unwrap)
+        let config = Config::set(self, false, &[Flag::NotCanonical, Flag::NotEcho]);
+        let value = read_key(config.lock, -1).map(Option::unwrap)?;
+
+        Ok(value)
     }
 
     /// Reads a line of text from the standard input stream.
     pub fn read_string(&mut self) -> IoResult<String> {
-        read_string(self, -1).map(Option::unwrap)
+        let config = Config::set(self, false, &[Flag::Canonical, Flag::NotEcho]);
+        let value = read_string(config.lock, -1).map(Option::unwrap)?;
+
+        Ok(value)
+    }
+
+    /// Reads a line of text from the standard input stream, but with the text hidden.
+    pub fn read_string_hidden(&mut self) -> IoResult<String> {
+        let config = Config::set(self, true, &[Flag::Canonical, Flag::NotEcho]);
+        let value = read_string(config.lock, -1).map(Option::unwrap)?;
+
+        Ok(value)
     }
 
     read_or_timeout! {
         "Reads a key with an optional timeout." |
-        read_key_or_timeout as read_key -> Key,
+        read_key_or_timeout as read_key with false, &[Flag::NotCanonical, Flag::NotEcho] => Key,
         "Reads a line of text with an optional timeout." |
-        read_string_or_timeout as read_string -> String,
+        read_string_or_timeout as read_string with false, &[Flag::Canonical, Flag::Echo] => String,
+        "Reads a line of text with an optional timeout, the text hidden." |
+        read_string_hidden_or_timeout as read_string with true, &[Flag::Canonical, Flag::NotEcho] => String,
     }
 
     read_future! {
-        "Reads a key asynchronously." |
-        read_key_future as read_key -> Key,
+        "\
+            Reads a key asynchronously.\n\
+            `.await` should be used with caution as for each failed poll, the\n\
+            future will request to be polled again immediately. To combat this,\n\
+            the flags are set preemptively.\n\
+            ```rust\n\
+            let terminal = Terminal::new();\n\
+            let mut stdin = terminal.lock_stdin().expect(\"Failed to connect with terminal\");\n\
+            let future_key = stdin.read_key_future(); // Flags are set to correctly handle input\n\n\
+            // ...Code between runs (recommended to keep <30 ms)\n\n\
+            let key = future_key.await.expect(\"Failed to read from input stream\");\n\
+            ```\
+        " |
+        read_key_future as read_key with false, &[Flag::NotCanonical, Flag::NotEcho] => Key,
         "Reads a line of text asynchronously." |
-        read_string_future as read_string -> String,
+        read_string_future as read_string with false, &[Flag::Canonical, Flag::Echo] => String,
+        "Reads a line of text asynchronously, the text hidden." |
+        read_string_hidden_future as read_string with true, &[Flag::Canonical, Flag::NotEcho] => String,
     }
 }
 
@@ -186,8 +223,8 @@ impl StdoutLock {
     }
 
     /// Moves the cursor to the specified row and column.
-    pub fn move_cursor(&mut self, row: usize, col: usize) -> IoResult<()> {
-        let move_cursor = format!("\x1b[{};{}H", row, col);
+    pub fn move_cursor(&mut self, rows: usize, columns: usize) -> IoResult<()> {
+        let move_cursor = format!("\x1b[{};{}H", rows, columns);
         self.print(&move_cursor)
     }
 
@@ -204,14 +241,14 @@ impl StdoutLock {
     }
 
     /// Moves the cursor forward (right) by a specified number of columns.
-    pub fn move_cursor_forward(&mut self, cols: usize) -> IoResult<()> {
-        let move_forward = format!("\x1b[{}C", cols);
+    pub fn move_cursor_forward(&mut self, columns: usize) -> IoResult<()> {
+        let move_forward = format!("\x1b[{}C", columns);
         self.print(&move_forward)
     }
 
     /// Moves the cursor backward (left) by a specified number of columns.
-    pub fn move_cursor_backward(&mut self, cols: usize) -> IoResult<()> {
-        let move_backward = format!("\x1b[{}D", cols);
+    pub fn move_cursor_backward(&mut self, columns: usize) -> IoResult<()> {
+        let move_backward = format!("\x1b[{}D", columns);
         self.print(&move_backward)
     }
 
