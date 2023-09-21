@@ -211,8 +211,8 @@ impl StdoutLock {
     }
 
     /// Moves the cursor to the specified row and column.
-    pub fn move_cursor(&mut self, row: usize, col: usize) -> IoResult<()> {
-        let move_cursor = format!("\x1b[{};{}H", row, col);
+    pub fn move_cursor(&mut self, rows: usize, columns: usize) -> IoResult<()> {
+        let move_cursor = format!("\x1b[{};{}H", rows, columns);
         self.print(&move_cursor)
     }
 
@@ -229,14 +229,14 @@ impl StdoutLock {
     }
 
     /// Moves the cursor forward (right) by a specified number of columns.
-    pub fn move_cursor_forward(&mut self, cols: usize) -> IoResult<()> {
-        let move_forward = format!("\x1b[{}C", cols);
+    pub fn move_cursor_forward(&mut self, columns: usize) -> IoResult<()> {
+        let move_forward = format!("\x1b[{}C", columns);
         self.print(&move_forward)
     }
 
     /// Moves the cursor backward (left) by a specified number of columns.
-    pub fn move_cursor_backward(&mut self, cols: usize) -> IoResult<()> {
-        let move_backward = format!("\x1b[{}D", cols);
+    pub fn move_cursor_backward(&mut self, columns: usize) -> IoResult<()> {
+        let move_backward = format!("\x1b[{}D", columns);
         self.print(&move_backward)
     }
 
