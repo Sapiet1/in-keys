@@ -148,7 +148,19 @@ impl StdinLock {
     }
 
     read_future! {
-        "Reads a key asynchronously." |
+        "\
+            Reads a key asynchronously.\n\
+            `.await` should be used with caution as for each failed poll, the\n\
+            future will request to be polled again immediately. To combat this,\n\
+            the flags are set preemptively.\n\
+            ```rust\n\
+            let terminal = Terminal::new();\n\
+            let mut stdin = terminal.lock_stdin().expect(\"Failed to connect with terminal\");\n\
+            let future_key = stdin.read_key_future(); // Flags are set to correctly handle input\n\n\
+            // ...Code between runs (recommended to keep <30 ms)\n\n\
+            let key = future_key.await.expect(\"Failed to read from input stream\");\n\
+            ```\
+        " |
         read_key_future as read_key with false, &[Flag::NotCanonical, Flag::NotEcho] => Key,
         "Reads a line of text asynchronously." |
         read_string_future as read_string with false, &[Flag::Canonical, Flag::Echo] => String,
