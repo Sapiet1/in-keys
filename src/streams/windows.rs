@@ -39,7 +39,7 @@ impl<'a> Config<'a> {
     pub(super) fn set(lock: &'a mut StdinLock<'static>, flush: bool, flags: &[Flag]) -> Self {
         unsafe {
             let mut mode = MaybeUninit::uninit();
-            io_error(|| Console::GetConsoleMode(lock.as_raw_handle(), mode.as_mut_ptr())).expect("failed reading flags");
+            io_error(|| Console::GetConsoleMode(lock.as_raw_handle() as isize, mode.as_mut_ptr())).expect("failed reading flags");
 
             let mut mode = mode.assume_init();
             let original = mode;
@@ -54,7 +54,7 @@ impl<'a> Config<'a> {
             }
 
             if flush { flush_input(lock); }
-            io_error(|| Console::SetConsoleMode(lock.as_raw_handle(), mode)).expect("failed setting flags");
+            io_error(|| Console::SetConsoleMode(lock.as_raw_handle() as isize, mode)).expect("failed setting flags");
             Config { lock, original, flush }
         }
     }
