@@ -6,7 +6,7 @@ use std::{
 };
 
 use windows_sys::Win32::{
-    Foundations::BOOL,
+    Foundations,
     System::Console,
 };
 
@@ -17,7 +17,7 @@ use crate::{
 
 const FAILURE: isize = 0;
 
-fn io_error(c_call: impl FnOnce() -> Console::BOOL) -> IoResult<()> {
+fn io_error(c_call: impl FnOnce() -> Foundations::BOOL) -> IoResult<()> {
     match c_call() {
         FAILURE => Err(IoError::last_os_error()),
         _ => Ok(()),
@@ -39,7 +39,7 @@ impl<'a> Config<'a> {
     pub(super) fn set(lock: &'a mut StdinLock<'static>, flush: bool, flags: &[Flag]) -> Self {
         unsafe {
             let mut mode = MaybeUninit::uninit();
-            io_error(|| Console::GetInputMode(lock.as_raw_handle(), mode.as_mut_ptr())).expect("failed reading flags");
+            io_error(|| Console::GetConsoleMode(lock.as_raw_handle(), mode.as_mut_ptr())).expect("failed reading flags");
 
             let mut mode = mode.assume_init();
             let original = mode;
@@ -47,14 +47,14 @@ impl<'a> Config<'a> {
             for flag in flags {
                 match flag {
                     Flag::Line => mode |= Console::ENABLE_LINE_INPUT,
-                    Flag::Echo => mode |= Console::ECHO,
+                    Flag::Echo => mode |= Console::ENABLE_ECHO_INPUT,
                     Flag::NoLine => mode &= !Console::ENABLE_LINE_INPUT,
-                    Flag::NoEcho => mode &= !Console::ECHO,
+                    Flag::NoEcho => mode &= !Console::ENABLE_ECHO_INPUT,
                 }
             }
 
             if flush { flush_input(lock); }
-            io_error(|| Console::SetInputMode(lock.as_raw_handle(), mode)).expect("failed setting flags");
+            io_error(|| Console::SetConsoleMode(lock.as_raw_handle(), mode)).expect("failed setting flags");
             Config { lock, original, flush }
         }
     }
