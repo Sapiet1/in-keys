@@ -15,4 +15,4 @@ derived-deref = "2"
 libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = "0.48"
+windows-sys = { version = "0.48", features = ["Win32_Foundation", "Win32_System_Console"] }
