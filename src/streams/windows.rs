@@ -1,11 +1,11 @@
 use std::{
     mem::MaybeUninit,
-    io::{StdoutLock, StdinLock, Bufread},
+    io::{StdoutLock, StdinLock, BufRead},
     os::windows::io::AsRawHandle,
     io::{Error as IoError, ErrorKind, Result as IoResult},
 };
 
-use window_sys::Win32::{
+use windows_sys::Win32::{
     Foundations::BOOL,
     System::Console,
 };
@@ -31,12 +31,12 @@ fn flush_input(lock: &mut StdinLock<'static>) {
 
 pub(crate) struct Config<'a> {
     pub(super) lock: &'a mut StdinLock<'static>,
-    original: CONSOLE_MODE,
+    original: Console::CONSOLE_MODE,
     flush: bool,
 }
 
 impl<'a> Config<'a> {
-    pub(super) fn set(lock: &'a mut StdinLock<'static>, flush: bool, flags: &[Flags]) -> Self {
+    pub(super) fn set(lock: &'a mut StdinLock<'static>, flush: bool, flags: &[Flag]) -> Self {
         unsafe {
             let mut mode = MaybeUninit::uninit();
             io_error(|| Console::GetInputMode(lock.as_raw_handle(), mode.as_mut_ptr())).expect("failed reading flags");
