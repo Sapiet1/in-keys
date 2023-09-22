@@ -1,8 +1,11 @@
+#[cfg(unix)]
 pub(crate) use crate::streams::unix::Config;
+#[cfg(windows)]
+pub(crate) use crate::streams::windows::Config;
 
 pub(crate) enum Flag {
     Echo,
-    Canonical,
-    NotEcho,
-    NotCanonical,
+    Line,
+    NoEcho,
+    NoLine,
 }

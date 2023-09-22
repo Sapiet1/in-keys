@@ -218,10 +218,10 @@ impl<'a> Config<'a> {
             // Set flags
             for flag in flags {
                 match flag {
-                    Flag::Canonical => termios.c_lflag |= libc::ICANON,
+                    Flag::Line => termios.c_lflag |= libc::ICANON,
                     Flag::Echo => termios.c_lflag |= libc::ECHO,
-                    Flag::NotCanonical => termios.c_lflag &= !libc::ICANON,
-                    Flag::NotEcho => termios.c_lflag &= !libc::ECHO,
+                    Flag::NoLine => termios.c_lflag &= !libc::ICANON,
+                    Flag::NoEcho => termios.c_lflag &= !libc::ECHO,
                 }
             }
 

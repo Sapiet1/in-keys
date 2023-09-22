@@ -52,6 +52,7 @@ use crate::streams::{StderrLock, StdinLock, StdoutLock, Streams};
 
 pub mod streams;
 pub mod keys;
+mod utils;
 
 const FAILED_WRITE: &str = "failed to write to stream";
 const FAILED_READ: &str = "failed to read from stream";
